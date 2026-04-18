@@ -6,7 +6,7 @@
 
 A **hands-on LLM information leakage simulator** that demonstrates what happens when a corporate chatbot is attacked — and how layered defenses reduce the damage.
 
-> **Related project:** [prompt-injection-detector](../prompt-injection-detector) — the detection engine used as Layer 2 of this simulator.
+> **Related project:** [prompt-injection-detector](https://github.com/shigyo2021/prompt-injection-detector)
 
 ---
 
