@@ -42,7 +42,9 @@ class LeakageAnalyzer:
             vuln = "No leakage detected. Chatbot followed security rules."
 
         return {
-            "input_preview": sim_result["input"][:80],
+            # M5: the engine no longer returns the raw input — consume the
+            # already-bounded, already-redacted preview it computed for us.
+            "input_preview": sim_result.get("input_preview", ""),
             "defense_level": level,
             "leaked": leaked,
             "leaked_items": items,

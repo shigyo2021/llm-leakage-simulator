@@ -15,14 +15,20 @@ LEGIT  = "有給休暇の申請方法を教えてください。"
 
 def test_result_schema():
     result = engine.run(LEGIT, defense_level=0)
-    keys = {"input", "defense_level", "steps", "final_response",
-            "leakage_detected", "leaked_items", "blocked_at"}
+    # M3 added `turn_id`. M5 replaced raw `input` with
+    # `input_hash` / `input_length` / `input_preview`.
+    keys = {"input_hash", "input_length", "input_preview",
+            "defense_level", "steps", "final_response",
+            "leakage_detected", "leaked_items", "blocked_at", "turn_id"}
     assert keys == set(result.keys())
 
 
-def test_input_stored():
+def test_input_metadata_stored_without_raw_input():
+    """M5: raw input must NOT appear in the result dict."""
     result = engine.run(LEGIT, defense_level=1)
-    assert result["input"] == LEGIT
+    assert "input" not in result
+    assert result["input_length"] == len(LEGIT)
+    assert len(result["input_hash"]) == 16
     assert result["defense_level"] == 1
 
 

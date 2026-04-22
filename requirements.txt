@@ -1,5 +1,18 @@
-anthropic>=0.20.0
-openai>=1.0.0
-streamlit>=1.28.0
-pandas>=2.0.0
-pytest>=7.4.0
+# M4: Supply-chain hardening — floor + major-version ceiling on every dep.
+# See prompt-injection-detector/requirements.txt for the full rationale.
+#
+# Notable constraints for this project:
+#   - anthropic/openai SDKs: a major bump historically changes the client
+#     constructor and response shape (e.g. anthropic 0.x → 1.x moves
+#     messages.create, openai 0.x → 1.x changed auth model). MockChatbot
+#     touches both — break either and Level 0-3 demos all stop working.
+#   - streamlit: cache_resource / session_state semantics drift across
+#     major versions; the app uses @st.cache_resource with explicit key
+#     isolation (H2 fix) so we need to ride 1.x.
+#   - pandas: used only for CSV/analytics in notebooks — safe range.
+
+anthropic>=0.40.0,<1.0.0
+openai>=1.30.0,<3.0.0
+streamlit>=1.35.0,<2.0.0
+pandas>=2.2.0,<4.0.0
+pytest>=8.0.0,<10.0.0

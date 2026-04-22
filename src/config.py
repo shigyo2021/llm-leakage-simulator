@@ -72,3 +72,11 @@ CHATBOT_MODEL = PROVIDERS["anthropic"]["model"]
 
 # Path to prompt-injection-detector (relative to this file's directory)
 DETECTOR_RELATIVE_PATH = "../../prompt-injection-detector"
+
+# ── M1: Input size limit (DoS / API cost gate) ───────────────────────────────
+# Mirrors the detector's MAX_INPUT_CHARS. Kept as a separate constant so the
+# simulator can be deployed standalone with the fallback detector and still
+# enforce the cap without importing detector config. 10 000 chars matches the
+# sibling project so behavior is uniform between standalone and integrated
+# modes.
+MAX_INPUT_CHARS = 10_000

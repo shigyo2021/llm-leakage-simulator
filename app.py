@@ -14,6 +14,7 @@ import pandas as pd
 from src.simulator_engine import SimulatorEngine
 from src.leakage_analyzer import LeakageAnalyzer
 from src.config import DEFENSE_LEVELS, MOCK_SECRETS, PROVIDERS
+from src.secrets_util import validate_api_key
 
 st.set_page_config(
     page_title="LLM情報漏洩シミュレーター",
@@ -36,33 +37,37 @@ LEGIT_SAMPLES  = [s for s in SAMPLES if s["attack_type"] is None]
 with st.sidebar:
     st.header("⚙️ API キー設定")
 
+    st.caption(
+        "⚠️ ここに入力したキーは **ブラウザ↔このStreamlitプロセス間のみ** で保持し、"
+        "環境変数や永続ストレージには保存しません。**本番用のキーは貼り付けないでください**。"
+    )
+
     anthropic_key = st.text_input(
         "🟠 Anthropic API キー（Claude用）",
         type="password", placeholder="sk-ant-...",
     )
-    # 入力欄が空になったら env も削除（ブラウザリロード対応）
-    if anthropic_key:
-        os.environ["ANTHROPIC_API_KEY"] = anthropic_key
-    else:
-        os.environ.pop("ANTHROPIC_API_KEY", None)
-
     openai_key = st.text_input(
         "🟢 OpenAI API キー（GPT用）",
         type="password", placeholder="sk-...",
     )
-    if openai_key:
-        os.environ["OPENAI_API_KEY"] = openai_key
-    else:
-        os.environ.pop("OPENAI_API_KEY", None)
+
+    # Validate shapes without making a network call. Invalid-shape keys are
+    # treated as not set so demo mode kicks in (safer than handing a bad key
+    # to the SDK and logging its error echo).
+    anthropic_valid, anthropic_msg = validate_api_key(anthropic_key, provider="anthropic")
+    openai_valid,    openai_msg    = validate_api_key(openai_key,    provider="openai")
+
+    claude_ok = bool(anthropic_key) and anthropic_valid
+    gpt_ok    = bool(openai_key)    and openai_valid
 
     st.divider()
-
-    # 接続状態は「入力欄に値があるか」で判定（env ではなく widget 値を正とする）
-    claude_ok = bool(anthropic_key)
-    gpt_ok    = bool(openai_key)
     st.caption("**接続状態**")
     st.markdown(f"{'✅' if claude_ok else '❌'} Claude (Anthropic)")
+    if anthropic_key and not anthropic_valid:
+        st.caption(f"  ↳ :red[{anthropic_msg}]")
     st.markdown(f"{'✅' if gpt_ok    else '❌'} GPT (OpenAI)")
+    if openai_key and not openai_valid:
+        st.caption(f"  ↳ :red[{openai_msg}]")
 
     st.divider()
     if not claude_ok and not gpt_ok:
@@ -81,10 +86,12 @@ with st.sidebar:
     for k, v in MOCK_SECRETS.items():
         st.code(f"{k}: {v}", language=None)
 
-# ── Cached engines (one per provider) ─────────────────────────────────────────
-@st.cache_resource
-def get_engine(provider: str) -> SimulatorEngine:
-    return SimulatorEngine(provider=provider)
+# ── Engine factory ────────────────────────────────────────────────────────────
+# NOT @st.cache_resource: the API key is passed per-call, and caching by
+# key would keep it alive in the Streamlit process memory across sessions.
+# Constructing SimulatorEngine is cheap (regex compile + thin wrappers).
+def get_engine(provider: str, api_key: str | None = None) -> SimulatorEngine:
+    return SimulatorEngine(provider=provider, api_key=api_key)
 
 analyzer = LeakageAnalyzer()
 
@@ -152,7 +159,8 @@ with tab1:
                               (provider == "openai"    and gpt_ok)
             is_demo = not provider_key_ok
 
-            engine = get_engine(provider)
+            provider_key = anthropic_key if provider == "anthropic" else openai_key
+            engine = get_engine(provider, api_key=provider_key or None)
             spinner_msg = f"{PROVIDERS[provider]['label']} に送信中…" if not is_demo \
                           else "デモモードで処理中…"
             with st.spinner(spinner_msg):
@@ -266,9 +274,13 @@ with tab2:
             icon="💡",
         )
 
-    # デモモード判定（選択したプロバイダーのうち1つでもAPIキーが未設定なら警告）
-    demo_providers = [p for p in test_providers
-                      if not os.environ.get(PROVIDERS[p]["env_key"])]
+    # デモモード判定（選択したプロバイダーのうち有効なAPIキーが無いもの）
+    provider_keys_map = {"anthropic": anthropic_key, "openai": openai_key}
+    demo_providers = [
+        p for p in test_providers
+        if not (provider_keys_map.get(p) and
+                validate_api_key(provider_keys_map.get(p), provider=p)[0])
+    ]
     if demo_providers:
         demo_labels = " / ".join(PROVIDERS[p]["label"] for p in demo_providers)
         st.warning(
@@ -287,7 +299,7 @@ with tab2:
         done = 0
 
         for prov in test_providers:
-            eng = get_engine(prov)
+            eng = get_engine(prov, api_key=provider_keys_map.get(prov) or None)
             for sample in selected_samples:
                 for lvl in test_levels:
                     sim  = eng.run(sample["text"], lvl)

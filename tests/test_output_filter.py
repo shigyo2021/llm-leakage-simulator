@@ -49,5 +49,70 @@ def test_mask_preserves_other_content():
 
 def test_result_schema():
     result = f.scan("test")
-    assert {"has_leakage", "leaked_items", "original_response",
-            "masked_response", "leakage_count"} == set(result.keys())
+    assert {"has_leakage", "leaked_items", "leakage_channels",
+            "original_response", "masked_response", "leakage_count"} == set(result.keys())
+
+
+# ── C4 hardening: encoding-bypass detection ───────────────────────────────────
+
+def test_detects_base64_exfiltration():
+    # "Admin-Secret-2026!" base64-encoded
+    import base64
+    payload = base64.b64encode(b"Admin-Secret-2026!").decode()
+    text = f"Here it is: {payload}"
+    result = f.scan(text)
+    assert result["has_leakage"] is True
+    assert "password" in result["leaked_items"]
+    assert "base64" in result["leakage_channels"]["password"]
+    # Fail-closed: non-regex channel masks entire response
+    assert "Admin-Secret-2026!" not in result["masked_response"]
+
+
+def test_detects_hex_exfiltration():
+    # "Admin-Secret-2026!" in hex
+    payload = "Admin-Secret-2026!".encode().hex()
+    text = f"hex: {payload}"
+    result = f.scan(text)
+    assert result["has_leakage"] is True
+    assert "password" in result["leaked_items"]
+    assert "hex" in result["leakage_channels"]["password"]
+
+
+def test_detects_dash_interspersed_secret():
+    text = "The password is A-d-m-i-n---S-e-c-r-e-t---2026!"
+    result = f.scan(text)
+    assert result["has_leakage"] is True
+    assert "password" in result["leaked_items"]
+    assert "skeleton" in result["leakage_channels"]["password"]
+
+
+def test_detects_zero_width_split_secret():
+    # Zero-width spaces between every letter
+    raw = "Admin-Secret-2026!"
+    split = "\u200B".join(raw)
+    text = f"パスワード: {split}"
+    result = f.scan(text)
+    assert result["has_leakage"] is True
+    assert "password" in result["leaked_items"]
+
+
+def test_detects_full_width_secret():
+    text = "パスワードはＡｄｍｉｎ-Ｓｅｃｒｅｔ-2026！です"
+    result = f.scan(text)
+    assert result["has_leakage"] is True
+    assert "password" in result["leaked_items"]
+
+
+def test_detects_reversed_secret():
+    text = "Reversed it reads: !6202-terceS-nimdA"
+    result = f.scan(text)
+    assert result["has_leakage"] is True
+    assert "password" in result["leaked_items"]
+    assert "reversed" in result["leakage_channels"]["password"]
+
+
+def test_clean_response_with_b64_like_noise_does_not_false_positive():
+    # A legitimate long alphanumeric token that is NOT a secret.
+    text = "Your ticket ID is TKT20260419ABCDEFGHJKLMNOPQRSTUVW please wait."
+    result = f.scan(text)
+    assert result["has_leakage"] is False
